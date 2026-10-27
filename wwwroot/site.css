@@ -6,6 +6,7 @@
   --paper: #ffffff;
   --canvas: #f5f7f4;
   --green: #34735b;
+  --red: #e31700;
   --green-dark: #245841;
   --green-pale: #e9f2eb;
   --orange: #e09b56;
@@ -26,7 +27,7 @@ button { cursor: pointer; }
 }
 .brand { display: inline-flex; gap: 10px; align-items: center; color: var(--ink); text-decoration: none; font: 800 21px Manrope, sans-serif; letter-spacing: -1px; }
 .brand-mark { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: white; background: var(--green); font: 800 20px Manrope, sans-serif; letter-spacing: -1px; }
-.brand-period { color: var(--green); }
+.brand-period { color: var(--red); }
 .top-nav { display: flex; align-items: center; gap: 29px; height: 100%; }
 .nav-link { height: 100%; position: relative; padding: 0 2px; border: 0; background: transparent; color: #78817c; font-size: 13px; font-weight: 600; }
 .nav-link.active { color: var(--green-dark); }
