@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f4">
+  <title>HadirKu Toko Siswa — Absensi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/site.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Hadir, beranda">
+      <span class="brand-mark" aria-hidden="true">h</span>
+      <span>hadir<span class="brand-period">.</span></span>
+    </a>
+    <nav class="top-nav" aria-label="Navigasi utama">
+      <button class="nav-link active" id="attendance-nav" type="button">Isi absensi</button>
+      <button class="nav-link" id="admin-nav" type="button">Admin <span class="lock-icon" aria-hidden="true">⌑</span></button>
+    </nav>
+  </header>
+
+  <main class="page-shell">
+    <section id="attendance-view">
+      <div class="hero">
+        <div>
+          <div class="eyebrow"><span class="live-dot"></span> FORMULIR KEHADIRAN</div>
+          <h1>Selamat datang.</h1>
+          <p class="hero-copy">Catat kehadiranmu hari ini. Hanya butuh beberapa detik.</p>
+        </div>
+        <div class="today-card">
+          <span class="today-label">HARI INI</span>
+          <strong id="today-date">—</strong>
+        </div>
+      </div>
+
+      <div class="content-grid">
+        <section class="form-card">
+          <div class="card-heading">
+            <div>
+              <span class="step-label">FORM ABSENSI <span>01</span></span>
+              <h2>Catat kehadiran</h2>
+            </div>
+            <span class="required-note"><span>*</span> wajib diisi</span>
+          </div>
+          <form id="attendance-form">
+            <label class="field-label" for="person-select">Nama lengkap <span class="required-star">*</span></label>
+            <div class="select-wrap">
+              <select id="person-select" name="name" required>
+                <option value="">Pilih namamu</option>
+              </select>
+              <span class="select-chevron" aria-hidden="true">⌄</span>
+            </div>
+            <label class="field-label" for="schedule-select">Shift hari ini <span class="required-star">*</span><span class="optional-label">Pilih sesuai jadwal rolling</span></label>
+            <div class="select-wrap">
+              <select id="schedule-select" name="scheduleId" required>
+                <option value="">Pilih shift hari ini</option>
+              </select>
+              <span class="select-chevron" aria-hidden="true">⌄</span>
+            </div>
+            <label class="field-label" for="attendance-type">Jenis absensi <span class="required-star">*</span><span class="optional-label">Wajib dipilih</span></label>
+            <div class="select-wrap">
+              <select id="attendance-type" name="attendanceType" required>
+                <option value="">Pilih jenis absensi</option>
+                <option value="datang">Datang</option>
+                <option value="pulang">Pulang</option>
+              </select>
+              <span class="select-chevron" aria-hidden="true">⌄</span>
+            </div>
+            <p id="attendance-rules-hint" class="form-hint attendance-rules-hint"></p>
+            <div id="custom-fields" class="custom-fields"></div>
+            <label class="field-label" for="attendance-note">Keterangan <span class="optional-label">Opsional</span></label>
+            <textarea id="attendance-note" name="note" rows="3" maxlength="2000" placeholder="Contoh: hadir, izin, atau catatan lainnya"></textarea>
+            <div class="field-label photo-label">Foto <span class="required-star">*</span><span class="optional-label">Wajib diisi · maks. 3,5 MiB</span></div>
+            <p id="camera-hint" class="form-hint camera-hint">Ambil foto langsung dengan kamera perangkat. Izin kamera diperlukan.</p>
+            <video id="camera-video" class="camera-preview hidden" autoplay muted playsinline aria-label="Pratinjau kamera"></video>
+            <div class="camera-actions">
+              <button id="camera-start" class="button button-secondary" type="button">Buka kamera</button>
+              <button id="camera-switch" class="button button-secondary hidden" type="button">Gunakan kamera depan</button>
+              <button id="camera-capture" class="button button-primary hidden" type="button" disabled>Ambil foto</button>
+              <button id="camera-retake" class="button button-secondary hidden" type="button">Ambil ulang</button>
+            </div>
+            <img id="photo-preview" class="photo-preview hidden" alt="Pratinjau foto yang akan diunggah">
+            <button class="button button-primary submit-button" type="submit">
+              <span>Kirim absensi</span><span aria-hidden="true">→</span>
+            </button>
+            <p class="form-footnote"><span class="shield-icon" aria-hidden="true">◆</span> Foto dan data tersimpan aman.</p>
+            <div id="attendance-feedback" class="feedback hidden" role="status" aria-live="polite"></div>
+          </form>
+        </section>
+        <aside class="side-note">
+          <div class="note-icon" aria-hidden="true">✳</div>
+          <span class="side-kicker">SEDERHANA &amp; AMAN</span>
+          <h3>Satu langkah kecil untuk mencatat kehadiran.</h3>
+          <p>Pastikan nama yang kamu pilih sudah benar sebelum mengirim absensi.</p>
+          <div class="side-divider"></div>
+          <div class="side-status"><span class="live-dot"></span><span>Data tersimpan langsung</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="admin-view" class="hidden">
+      <div id="admin-auth" class="auth-wrap"></div>
+      <div id="admin-dashboard" class="hidden"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>hadir<span class="brand-period">.</span></span>
+    <span>Absensi setiap hari  <i><b>@Copyright IamGabek 2026</b></i></span>
+  </footer>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
