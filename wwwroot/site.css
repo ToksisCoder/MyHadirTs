@@ -148,6 +148,10 @@ input:focus, select:focus, textarea:focus { border-color: #80a791; box-shadow: 0
 .records-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr); gap: 10px; padding: 0 22px 14px; }
 .records-filter-label { display: grid; gap: 5px; color: #8a958d; font-size: 9px; font-weight: 600; }
 .records-filter-label input, .records-filter-label select { min-width: 0; height: 36px; }
+.records-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 16px; padding: 0 22px 14px; color: #657269; font-size: 9px; }
+.records-legend-title { color: #89948c; font-weight: 600; }
+.records-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.records-legend-swatch { width: 9px; height: 9px; display: inline-block; border-radius: 50%; }
 .records-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 22px 14px; }
 .records-controls .form-hint { margin: 0; }
 .records-controls .button { min-height: 34px; flex: 0 0 auto; }
@@ -160,7 +164,21 @@ td { padding: 12px 14px; border-top: 1px solid #f0f2ef; color: #526158; font-siz
 td strong { color: var(--ink); font-size: 11px; font-weight: 600; }
 .record-date, .record-time { display: block; white-space: nowrap; }
 .record-time { margin-top: 4px; color: #9aa39c; font-size: 9px; }
-.record-type { display: inline-block; margin-top: 5px; padding: 3px 6px; border-radius: 5px; color: #52745c; background: #edf4ed; font-size: 9px; }
+.record-name { display: block; }
+.record-type { display: inline-block; margin-top: 5px; padding: 3px 6px; border-radius: 5px; font-size: 9px; }
+.record-schedule { display: block; margin-top: 5px; color: #89958d; font-size: 9px; }
+.record-name--ontime { color: #2f7042; }
+.record-name--early { color: #1768a5; }
+.record-name--late { color: #8a6200; }
+.record-name--absent { color: #a33434; }
+.record-type--ontime { color: #2f7042; background: #e8f4e9; }
+.record-type--early { color: #1768a5; background: #e5f3fc; }
+.record-type--late { color: #8a6200; background: #fff3cf; }
+.record-type--absent { color: #a33434; background: #fde8e7; }
+.records-legend-swatch.record-status--ontime { background: #58a36b; }
+.records-legend-swatch.record-status--early { background: #4aa5dc; }
+.records-legend-swatch.record-status--late { background: #e1ae2f; }
+.records-legend-swatch.record-status--absent { background: #d65b57; }
 .record-note { display: block; max-width: 230px; overflow-wrap: anywhere; }
 .record-extra { display: block; margin-top: 4px; color: #89958d; font-size: 9px; }
 .record-extra b { color: #68766d; font-weight: 600; }
@@ -274,6 +292,7 @@ td strong { color: var(--ink); font-size: 11px; font-weight: 600; }
   .records-card { padding: 17px 0 0; }
   .records-title { padding: 0 17px 14px; }
   .records-filters { grid-template-columns: 1fr; padding: 0 17px 12px; }
+  .records-legend { padding: 0 17px 12px; }
   th:first-child, td:first-child { padding-left: 17px; }
   th:last-child, td:last-child { padding-right: 17px; }
   .auth-card { padding: 26px 22px; }

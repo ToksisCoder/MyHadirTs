@@ -740,24 +740,40 @@ admin.get("/records", async (request, response) => {
     .order("id", { ascending: false });
   if (name) recordsQuery = recordsQuery.eq("person_name", name);
   if (date) recordsQuery = recordsQuery.eq("created_local_date", date);
-  const [rows, schedulesRows] = await Promise.all([
+  const [rows, schedulesRows, rules] = await Promise.all([
     recordsQuery.range(offset, offset + pageSize),
-    getAttendanceSchedules()
+    getAttendanceSchedules(),
+    getAttendanceRules()
   ]);
   const schedulesById = new Map(schedulesRows.map(schedule => [schedule.id, schedule]));
   const result = unwrap(rows);
-  const records = result.slice(0, pageSize).map(record => ({
-    id: record.id,
-    name: record.person_name,
-    type: record.attendance_type,
-    note: record.note,
-    values: record.values_json,
-    hasPhoto: Boolean(record.photo_path),
-    createdAt: record.created_at,
-    scheduleLabel: record.schedule_label ?? schedulesById.get(record.schedule_id)?.label ?? "Jadwal tidak diketahui",
-    scheduleStartTime: record.schedule_start_time,
-    scheduleEndTime: record.schedule_end_time
-  }));
+  const records = result.slice(0, pageSize).map(record => {
+    let status;
+    if (record.attendance_type === "datang") {
+      const minutesFromStart = attendanceMinutes(record.created_at) - timeToMinutes(record.schedule_start_time);
+      if (minutesFromStart > rules.lateLimitMinutes) status = { label: "Tidak masuk", color: "absent" };
+      else if (minutesFromStart > rules.toleranceMinutes) status = { label: "Terlambat", color: "late" };
+      else if (minutesFromStart < -rules.earlyLimitMinutes) status = { label: "Nilai plus", color: "early" };
+      else status = { label: "Tepat waktu", color: "ontime" };
+    } else if (attendanceMinutes(record.created_at) > timeToMinutes(record.schedule_end_time)) {
+      status = { label: "Pulang terlambat", color: "late" };
+    } else {
+      status = { label: "Pulang tepat waktu", color: "ontime" };
+    }
+    return {
+      id: record.id,
+      name: record.person_name,
+      type: record.attendance_type,
+      note: record.note,
+      values: record.values_json,
+      hasPhoto: Boolean(record.photo_path),
+      createdAt: record.created_at,
+      status,
+      scheduleLabel: record.schedule_label ?? schedulesById.get(record.schedule_id)?.label ?? "Jadwal tidak diketahui",
+      scheduleStartTime: record.schedule_start_time,
+      scheduleEndTime: record.schedule_end_time
+    };
+  });
   return response.json({ records, hasMore: result.length > pageSize });
 });
 

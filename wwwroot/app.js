@@ -219,7 +219,7 @@ function renderRecord(record) {
   const attendanceType = record.type === "pulang" ? "Pulang" : "Datang";
   return `<tr>
     <td><span class="record-date">${escapeHtml(formatDate(record.createdAt))}</span><span class="record-time">${escapeHtml(formatTime(record.createdAt))}</span></td>
-    <td><strong>${escapeHtml(record.name)}</strong><span class="record-type">${attendanceType} · ${escapeHtml(record.scheduleLabel)} (${escapeHtml(record.scheduleStartTime)}–${escapeHtml(record.scheduleEndTime)})</span></td>
+    <td><strong class="record-name record-name--${escapeHtml(record.status.color)}">${escapeHtml(record.name)}</strong><span class="record-type record-type--${escapeHtml(record.status.color)}">${attendanceType} · ${escapeHtml(record.status.label)}</span><span class="record-schedule">${escapeHtml(record.scheduleLabel)} (${escapeHtml(record.scheduleStartTime)}–${escapeHtml(record.scheduleEndTime)})</span></td>
     <td><span class="record-note">${escapeHtml(record.note || "—")}</span>${custom}</td>
     <td>${photo}</td>
   </tr>`;
@@ -286,6 +286,13 @@ function renderDashboard(data) {
           <label class="records-filter-label" for="records-date-filter">Tanggal
             <input id="records-date-filter" type="date">
           </label>
+        </div>
+        <div class="records-legend" aria-label="Legenda status absensi">
+          <span class="records-legend-title">Warna status:</span>
+          <span class="records-legend-item"><i class="records-legend-swatch record-status--ontime"></i>Tepat waktu</span>
+          <span class="records-legend-item"><i class="records-legend-swatch record-status--early"></i>Nilai plus (lebih awal dari ambang)</span>
+          <span class="records-legend-item"><i class="records-legend-swatch record-status--late"></i>Terlambat</span>
+          <span class="records-legend-item"><i class="records-legend-swatch record-status--absent"></i>Tidak masuk (melewati batas terlambat)</span>
         </div>
         <div class="records-controls">
           <p id="records-feedback" class="form-hint" role="status" aria-live="polite">Riwayat hanya dimuat saat diminta.</p>
