@@ -84,6 +84,7 @@ function zonedParts(value = new Date()) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hourCycle: "h23"
   }).formatToParts(value).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
 }
@@ -105,14 +106,26 @@ function timeToMinutes(value) {
 }
 
 function attendanceMinutes(createdAt) {
-  const { hour, minute } = zonedParts(new Date(createdAt));
-  return Number(hour) * 60 + Number(minute);
+  const { hour, minute, second } = zonedParts(new Date(createdAt));
+  return Number(hour) * 60 + Number(minute) + Number(second) / 60;
 }
 
 function isValidDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const timestamp = Date.parse(`${value}T00:00:00.000Z`);
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
+}
+
+function isValidZonedDateTime(value) {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  if (!match || !isValidDate(match[1])) return false;
+  if (Number(match[2]) > 23 || Number(match[3]) > 59 || Number(match[4] ?? 0) > 59) return false;
+  if (match[5] !== "Z") {
+    const offsetHours = Number(match[7]);
+    const offsetMinutes = Number(match[8]);
+    if (offsetHours > 14 || offsetMinutes > 59 || offsetHours === 14 && offsetMinutes !== 0) return false;
+  }
+  return Number.isFinite(Date.parse(value));
 }
 
 function derivePasswordHash(password, salt) {
@@ -138,13 +151,14 @@ function verifyPasswordHash(password, salt, scheme) {
 
 async function getAttendanceRules() {
   const row = unwrap(await getSupabase().from("attendance_rules")
-    .select("tolerance_minutes,late_limit_minutes,early_limit_minutes")
+    .select("tolerance_minutes,late_limit_minutes,early_limit_minutes,late_departure_limit_minutes")
     .eq("id", 1)
     .single());
   return {
     toleranceMinutes: row.tolerance_minutes,
     lateLimitMinutes: row.late_limit_minutes,
-    earlyLimitMinutes: row.early_limit_minutes
+    earlyLimitMinutes: row.early_limit_minutes,
+    lateDepartureLimitMinutes: row.late_departure_limit_minutes
   };
 }
 
@@ -443,7 +457,8 @@ async function monthlyAttendanceSummary(month) {
       if (firstEvent) summary.scheduleLabels.add(firstEvent.schedule_label ?? schedule.label);
       countArrival(arrival);
       if (departures.some(departure =>
-        attendanceMinutes(departure.created_at) > timeToMinutes(departure.schedule_end_time))) {
+        attendanceMinutes(departure.created_at) >
+          timeToMinutes(departure.schedule_end_time) + rules.lateDepartureLimitMinutes)) {
         summary.lateDeparture += 1;
       }
     }
@@ -461,7 +476,8 @@ async function monthlyAttendanceSummary(month) {
         summary.absent += 1;
       }
       if ((todayEvents?.pulang ?? []).some(departure =>
-        attendanceMinutes(departure.created_at) > timeToMinutes(departure.schedule_end_time))) {
+        attendanceMinutes(departure.created_at) >
+          timeToMinutes(departure.schedule_end_time) + rules.lateDepartureLimitMinutes)) {
         summary.lateDeparture += 1;
       }
     }
@@ -666,7 +682,8 @@ app.post("/api/attendance", limitAttendanceRequest, upload.single("photo"), asyn
     message = "Absensi datang tercatat, tetapi melewati batas keterlambatan dan dihitung tidak masuk.";
   } else if (attendanceType === "datang" && minutesLate > rules.toleranceMinutes) {
     message = "Absensi datang tercatat sebagai terlambat.";
-  } else if (attendanceType === "pulang" && attendanceMinutes(createdAt) > timeToMinutes(schedule.endTime)) {
+  } else if (attendanceType === "pulang" &&
+      attendanceMinutes(createdAt) > timeToMinutes(schedule.endTime) + rules.lateDepartureLimitMinutes) {
     message = "Absensi pulang tercatat terlambat.";
   }
   return response.json({ id: inserted.data.id, message });
@@ -755,7 +772,8 @@ admin.get("/records", async (request, response) => {
       else if (minutesFromStart > rules.toleranceMinutes) status = { label: "Terlambat", color: "late" };
       else if (minutesFromStart < -rules.earlyLimitMinutes) status = { label: "Nilai plus", color: "early" };
       else status = { label: "Tepat waktu", color: "ontime" };
-    } else if (attendanceMinutes(record.created_at) > timeToMinutes(record.schedule_end_time)) {
+    } else if (attendanceMinutes(record.created_at) >
+        timeToMinutes(record.schedule_end_time) + rules.lateDepartureLimitMinutes) {
       status = { label: "Pulang terlambat", color: "late" };
     } else {
       status = { label: "Pulang tepat waktu", color: "ontime" };
@@ -777,6 +795,54 @@ admin.get("/records", async (request, response) => {
   return response.json({ records, hasMore: result.length > pageSize });
 });
 
+admin.get("/records/:id/corrections", async (request, response) => {
+  const recordId = Number(request.params.id);
+  if (!Number.isSafeInteger(recordId) || recordId < 1) return sendError(response, 404, "Catatan absensi tidak ditemukan.");
+  const entries = await fetchAllRows(() => getSupabase().from("attendance_correction_audit")
+    .select("id,attendance_id,admin_username,reason,old_values,new_values,created_at")
+    .eq("attendance_id", recordId)
+    .order("id", { ascending: false }));
+  return response.json({ corrections: entries });
+});
+
+admin.put("/records/:id", async (request, response) => {
+  const recordId = Number(request.params.id);
+  if (!Number.isSafeInteger(recordId) || recordId < 1) return sendError(response, 404, "Catatan absensi tidak ditemukan.");
+  const { attendanceType, createdAt, note, reason } = request.body ?? {};
+  if (attendanceType !== "datang" && attendanceType !== "pulang") {
+    return sendError(response, 400, "Pilih jenis absensi Datang atau Pulang.");
+  }
+  if (typeof createdAt !== "string" || !isValidZonedDateTime(createdAt)) {
+    return sendError(response, 400, "Waktu koreksi tidak valid.");
+  }
+  if (typeof note !== "string" || note.length > 2000) {
+    return sendError(response, 400, "Keterangan maksimal 2.000 karakter.");
+  }
+  if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 1000) {
+    return sendError(response, 400, "Alasan koreksi wajib diisi (maksimal 1.000 karakter).");
+  }
+  const correctedAt = new Date(createdAt);
+  const result = await getSupabase().rpc("correct_attendance", {
+    p_attendance_id: recordId,
+    p_attendance_type: attendanceType,
+    p_created_at: correctedAt.toISOString(),
+    p_created_local_date: localDate(correctedAt),
+    p_note: note.trim(),
+    p_reason: reason.trim(),
+    p_admin_username: request.adminUsername
+  });
+  if (result.error?.code === "P0002") return sendError(response, 404, "Catatan absensi tidak ditemukan.");
+  if (result.error?.code === "23505") {
+    return sendError(response, 409, "Karyawan sudah memiliki jenis absensi yang sama pada tanggal tersebut.");
+  }
+  if (result.error?.code === "23514") {
+    return sendError(response, 409, "Koreksi bertentangan dengan shift yang sudah dikunci pada tanggal tersebut.");
+  }
+  if (result.error?.code === "P0001") return sendError(response, 400, "Tidak ada perubahan pada catatan absensi.");
+  unwrap(result);
+  return response.json({ message: "Koreksi absensi berhasil disimpan dan dicatat pada log audit." });
+});
+
 admin.get("/schedules", async (_request, response) => {
   return response.json({ schedules: (await getAttendanceSchedules()).map(publicSchedule) });
 });
@@ -792,12 +858,16 @@ admin.get("/summary", async (request, response) => {
 });
 
 admin.post("/rules", async (request, response) => {
-  const { toleranceMinutes, lateLimitMinutes, earlyLimitMinutes } = request.body ?? {};
+  const { toleranceMinutes, lateLimitMinutes, earlyLimitMinutes, lateDepartureLimitMinutes } = request.body ?? {};
   if (!Number.isInteger(toleranceMinutes) || toleranceMinutes < 0 || toleranceMinutes > 180) {
     return sendError(response, 400, "Toleransi keterlambatan harus antara 0 dan 180 menit.");
   }
   if (!Number.isInteger(earlyLimitMinutes) || earlyLimitMinutes < 0 || earlyLimitMinutes > 360) {
     return sendError(response, 400, "Batas datang awal harus antara 0 dan 360 menit.");
+  }
+  if (!Number.isInteger(lateDepartureLimitMinutes) ||
+      lateDepartureLimitMinutes < 0 || lateDepartureLimitMinutes > 360) {
+    return sendError(response, 400, "Batas terlambat pulang harus antara 0 dan 360 menit.");
   }
   if (!Number.isInteger(lateLimitMinutes) || lateLimitMinutes < 1 ||
       lateLimitMinutes > 360 || lateLimitMinutes <= toleranceMinutes) {
@@ -806,7 +876,8 @@ admin.post("/rules", async (request, response) => {
   unwrap(await getSupabase().from("attendance_rules").update({
     tolerance_minutes: toleranceMinutes,
     late_limit_minutes: lateLimitMinutes,
-    early_limit_minutes: earlyLimitMinutes
+    early_limit_minutes: earlyLimitMinutes,
+    late_departure_limit_minutes: lateDepartureLimitMinutes
   }).eq("id", 1));
   return response.json({ message: "Aturan absensi berhasil disimpan.", rules: await getAttendanceRules() });
 });

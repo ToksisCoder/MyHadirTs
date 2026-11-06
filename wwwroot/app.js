@@ -19,6 +19,7 @@ let recordsLoaded = false;
 let recordsHasMore = false;
 let recordsLoading = false;
 let recordsRequestSequence = 0;
+let correctionHistorySequence = 0;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -217,12 +218,33 @@ function renderRecord(record) {
     ? `<a class="photo-link" href="/api/admin/attendance/${record.id}/photo" target="_blank" rel="noopener">Lihat foto ↗</a>`
     : `<span class="muted-cell">—</span>`;
   const attendanceType = record.type === "pulang" ? "Pulang" : "Datang";
+  const correctionButton = `<button class="record-correction-button" type="button" data-correct-record="${record.id}" data-type="${record.type}" data-created-at="${escapeHtml(record.createdAt)}" data-note="${escapeHtml(record.note)}" data-name="${escapeHtml(record.name)}">Koreksi</button>`;
   return `<tr>
     <td><span class="record-date">${escapeHtml(formatDate(record.createdAt))}</span><span class="record-time">${escapeHtml(formatTime(record.createdAt))}</span></td>
-    <td><strong class="record-name record-name--${escapeHtml(record.status.color)}">${escapeHtml(record.name)}</strong><span class="record-type record-type--${escapeHtml(record.status.color)}">${attendanceType} · ${escapeHtml(record.status.label)}</span><span class="record-schedule">${escapeHtml(record.scheduleLabel)} (${escapeHtml(record.scheduleStartTime)}–${escapeHtml(record.scheduleEndTime)})</span></td>
+    <td><strong class="record-name record-name--${escapeHtml(record.status.color)}">${escapeHtml(record.name)}</strong><span class="record-type record-type--${escapeHtml(record.status.color)}">${attendanceType} · ${escapeHtml(record.status.label)}</span><span class="record-schedule">${escapeHtml(record.scheduleLabel)} (${escapeHtml(record.scheduleStartTime)}–${escapeHtml(record.scheduleEndTime)})</span>${correctionButton}</td>
     <td><span class="record-note">${escapeHtml(record.note || "—")}</span>${custom}</td>
     <td>${photo}</td>
   </tr>`;
+}
+
+function formatCorrectionValues(values) {
+  const attendanceType = values.attendanceType === "pulang" ? "Pulang" : "Datang";
+  const timestamp = new Date(values.createdAt);
+  const dateTime = Number.isFinite(timestamp.getTime())
+    ? `${formatDate(timestamp)} ${formatTime(timestamp)}`
+    : "Waktu tidak valid";
+  return `${attendanceType} · ${dateTime} · Keterangan: ${values.note || "—"}`;
+}
+
+function renderCorrectionHistory(corrections) {
+  if (!corrections.length) return '<p class="form-hint">Belum ada riwayat koreksi.</p>';
+  return `<ol class="correction-history-list">${corrections.map(entry => `
+    <li>
+      <p><strong>${escapeHtml(entry.admin_username)}</strong> · ${escapeHtml(formatDate(entry.created_at))} ${escapeHtml(formatTime(entry.created_at))}</p>
+      <p><span class="correction-history-label">Sebelum:</span> ${escapeHtml(formatCorrectionValues(entry.old_values))}</p>
+      <p><span class="correction-history-label">Sesudah:</span> ${escapeHtml(formatCorrectionValues(entry.new_values))}</p>
+      <p><span class="correction-history-label">Alasan:</span> ${escapeHtml(entry.reason)}</p>
+    </li>`).join("")}</ol>`;
 }
 
 function renderDashboard(data) {
@@ -291,7 +313,7 @@ function renderDashboard(data) {
           <span class="records-legend-title">Warna status:</span>
           <span class="records-legend-item"><i class="records-legend-swatch record-status--ontime"></i>Tepat waktu</span>
           <span class="records-legend-item"><i class="records-legend-swatch record-status--early"></i>Nilai plus (lebih awal dari ambang)</span>
-          <span class="records-legend-item"><i class="records-legend-swatch record-status--late"></i>Terlambat</span>
+          <span class="records-legend-item"><i class="records-legend-swatch record-status--late"></i>Terlambat / pulang terlambat (&gt;${rules.lateDepartureLimitMinutes} menit setelah jadwal)</span>
           <span class="records-legend-item"><i class="records-legend-swatch record-status--absent"></i>Tidak masuk (melewati batas terlambat)</span>
         </div>
         <div class="records-controls">
@@ -301,18 +323,46 @@ function renderDashboard(data) {
         <div class="table-scroll"><table><thead><tr><th>Waktu</th><th>Nama / jenis</th><th>Keterangan &amp; kolom</th><th>Foto</th></tr></thead>
           <tbody id="records-table-body"><tr><td colspan="4" class="empty-cell">Klik “Muat riwayat” untuk menampilkan catatan.</td></tr></tbody>
         </table></div>
+        <section id="correction-panel" class="correction-panel hidden" aria-labelledby="correction-title">
+          <div class="correction-panel-heading">
+            <div><span class="step-label">KOREKSI ADMIN</span><h3 id="correction-title">Koreksi catatan absensi</h3></div>
+            <button class="button button-quiet" data-close-correction type="button" aria-label="Tutup koreksi">Tutup</button>
+          </div>
+          <p id="correction-current" class="settings-description"></p>
+          <p class="form-hint">Waktu koreksi mengikuti zona waktu perangkat ini; tanggal rekap dihitung dalam zona waktu aplikasi.</p>
+          <form id="correction-form" class="correction-form">
+            <input name="attendanceId" type="hidden">
+            <label class="field-label" for="correction-type">Jenis absensi</label>
+            <select id="correction-type" name="attendanceType" required><option value="datang">Datang</option><option value="pulang">Pulang</option></select>
+            <label class="field-label" for="correction-created-at">Tanggal dan waktu (zona waktu perangkat)</label>
+            <input id="correction-created-at" name="createdAt" type="datetime-local" required>
+            <label class="field-label" for="correction-note">Keterangan</label>
+            <textarea id="correction-note" name="note" rows="2" maxlength="2000"></textarea>
+            <label class="field-label" for="correction-reason">Alasan koreksi <span class="required-star">*</span></label>
+            <textarea id="correction-reason" name="reason" rows="3" maxlength="1000" required></textarea>
+            <div class="correction-form-actions">
+              <button class="button button-primary" type="submit">Simpan koreksi</button>
+              <button class="button button-secondary" data-close-correction type="button">Batal</button>
+            </div>
+          </form>
+          <div class="correction-history">
+            <h4>Riwayat perubahan</h4>
+            <div id="correction-history-content"><p class="form-hint">Memuat riwayat…</p></div>
+          </div>
+        </section>
       </section>
     </section>
     <section id="settings-panel" class="admin-panel hidden">
       <div class="settings-grid">
         <section class="panel-card settings-card rules-card">
             <div class="panel-title"><div><span class="step-label">BATAS DATANG &amp; KETERLAMBATAN</span><h2>Aturan absensi</h2></div><span class="settings-count">Berlaku untuk semua jadwal</span></div>
-            <p class="settings-description">Batas datang awal, toleransi, dan batas terlambat berlaku pada semua kategori. Perubahan aturan menghitung ulang rekap bulan sebelumnya.</p>
+            <p class="settings-description">Ambang datang awal dan toleransi berlaku pada semua kategori. Perubahan batas datang atau pulang dan keterlambatan menghitung ulang rekap bulan sebelumnya.</p>
           <form id="attendance-rules-form" class="rules-form">
               <label class="field-label" for="late-tolerance">Maksimal toleransi keterlambatan (menit)</label><input id="late-tolerance" name="toleranceMinutes" type="number" min="0" max="180" value="${rules.toleranceMinutes}" required>
               <label class="field-label" for="late-limit">Batas akhir terlambat (menit setelah jam masuk)</label><input id="late-limit" name="lateLimitMinutes" type="number" min="1" max="360" value="${rules.lateLimitMinutes}" required>
               <label class="field-label" for="early-limit">Ambang nilai plus datang awal (menit sebelum jam masuk)</label><input id="early-limit" name="earlyLimitMinutes" type="number" min="0" max="360" value="${rules.earlyLimitMinutes}" required>
-              <p class="form-hint rules-explanation">Absensi Datang tetap diterima meski jauh lebih awal. Kedatangan yang lebih awal daripada ambang ini dihitung sebagai nilai plus; toleransi hingga batas akhir menentukan keterlambatan.</p>
+              <label class="field-label" for="late-departure-limit">Batas terlambat pulang (menit setelah jadwal pulang)</label><input id="late-departure-limit" name="lateDepartureLimitMinutes" type="number" min="0" max="360" value="${rules.lateDepartureLimitMinutes}" required>
+              <p class="form-hint rules-explanation">Absensi Datang tetap diterima meski jauh lebih awal. Kedatangan yang lebih awal daripada ambang ini dihitung sebagai nilai plus. Pulang dihitung terlambat jika melewati jadwal pulang lebih dari batas terlambat pulang.</p>
               <button class="button button-primary" type="submit">Simpan aturan</button>
             </form>
           </section>
@@ -410,7 +460,7 @@ async function loadMonthlyReport(month) {
     $("#monthly-report-note").textContent = note;
     content.innerHTML = `
       <table class="monthly-table">
-        <thead><tr><th>Nama karyawan</th><th>Shift digunakan</th><th>Masuk</th><th>Terlambat</th><th>Masuk awal</th><th>Nilai plus (&gt;${report.rules.earlyLimitMinutes} menit awal)</th><th>Pulang terlambat</th><th>Tidak masuk / libur</th></tr></thead>
+        <thead><tr><th>Nama karyawan</th><th>Shift digunakan</th><th>Masuk</th><th>Terlambat</th><th>Masuk awal</th><th>Nilai plus (&gt;${report.rules.earlyLimitMinutes} menit awal)</th><th>Pulang terlambat (&gt;${report.rules.lateDepartureLimitMinutes} menit)</th><th>Tidak masuk / libur</th></tr></thead>
         <tbody>${report.employees.length ? report.employees.map(employee => `<tr>
           <td><strong>${escapeHtml(employee.name)}</strong></td><td>${employee.scheduleLabels.map(escapeHtml).join(", ") || "—"}</td>
           <td>${employee.present}</td><td>${employee.late}</td><td>${employee.early}</td><td>${employee.earlyBonus}</td><td>${employee.lateDeparture}</td><td>${employee.absent}</td>
@@ -467,6 +517,27 @@ async function loadAttendanceRecords() {
   }
 }
 
+function resetAttendanceRecords(message) {
+  recordsRequestSequence += 1;
+  recordsOffset = 0;
+  recordsLoaded = false;
+  recordsHasMore = false;
+  recordsLoading = false;
+  $("#correction-panel").classList.add("hidden");
+  $("#records-count").textContent = "Belum dimuat";
+  $("#records-feedback").textContent = message;
+  $("#records-table-body").innerHTML = '<tr><td colspan="4" class="empty-cell">Klik “Muat riwayat” untuk menampilkan catatan.</td></tr>';
+  const button = $("#load-records-button");
+  button.disabled = false;
+  button.textContent = "Muat riwayat";
+}
+
+function toLocalDateTimeInput(value) {
+  const date = new Date(value);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
 async function refreshDashboard() {
   adminData = await api("/api/admin/data");
   renderDashboard(adminData);
@@ -484,17 +555,7 @@ adminNav.addEventListener("click", () => setView("admin"));
 $("#person-select").addEventListener("change", () => updateAttendanceScheduleHint());
 document.addEventListener("change", event => {
   if (!event.target.matches("#records-person-filter, #records-date-filter")) return;
-  recordsRequestSequence += 1;
-  recordsOffset = 0;
-  recordsLoaded = false;
-  recordsHasMore = false;
-  recordsLoading = false;
-  $("#records-count").textContent = "Belum dimuat";
-  $("#records-feedback").textContent = "Filter diperbarui. Klik “Muat riwayat” untuk menampilkan catatan.";
-  $("#records-table-body").innerHTML = '<tr><td colspan="4" class="empty-cell">Klik “Muat riwayat” untuk menampilkan catatan.</td></tr>';
-  const button = $("#load-records-button");
-  button.disabled = false;
-  button.textContent = "Muat riwayat";
+  resetAttendanceRecords("Filter diperbarui. Klik “Muat riwayat” untuk menampilkan catatan.");
 });
 $("#today-date").textContent = new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" });
 
@@ -711,6 +772,37 @@ document.addEventListener("click", async event => {
     await loadAttendanceRecords();
     return;
   }
+  if (event.target.closest("[data-close-correction]")) {
+    $("#correction-panel").classList.add("hidden");
+    return;
+  }
+  const correctionButton = event.target.closest("[data-correct-record]");
+  if (correctionButton) {
+    const form = $("#correction-form");
+    const panel = $("#correction-panel");
+    const recordId = correctionButton.dataset.correctRecord;
+    form.elements.attendanceId.value = recordId;
+    form.elements.attendanceType.value = correctionButton.dataset.type;
+    form.elements.createdAt.value = toLocalDateTimeInput(correctionButton.dataset.createdAt);
+    form.elements.note.value = correctionButton.dataset.note;
+    form.elements.reason.value = "";
+    $("#correction-current").textContent = `Catatan saat ini untuk ${correctionButton.dataset.name}: ${correctionButton.dataset.type === "datang" ? "Datang" : "Pulang"} · ${formatDate(correctionButton.dataset.createdAt)} ${formatTime(correctionButton.dataset.createdAt)}. Isi perubahan dan alasan koreksi.`;
+    $("#correction-history-content").innerHTML = '<p class="form-hint">Memuat riwayat…</p>';
+    panel.classList.remove("hidden");
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const historySequence = ++correctionHistorySequence;
+    try {
+      const result = await api(`/api/admin/records/${recordId}/corrections`);
+      if (historySequence !== correctionHistorySequence ||
+          form.elements.attendanceId.value !== recordId) return;
+      $("#correction-history-content").innerHTML = renderCorrectionHistory(result.corrections);
+    } catch (error) {
+      if (historySequence !== correctionHistorySequence) return;
+      $("#correction-history-content").textContent = `Riwayat koreksi gagal dimuat: ${error.message}`;
+      showToast(error.message, true);
+    }
+    return;
+  }
   const removePerson = event.target.closest("[data-delete-person]");
   const removeField = event.target.closest("[data-delete-field]");
   const removeSchedule = event.target.closest("[data-delete-schedule]");
@@ -736,7 +828,36 @@ document.addEventListener("click", async event => {
 
 document.addEventListener("submit", async event => {
   const form = event.target;
-  if (form.id === "admin-login-form" || form.id === "admin-setup-form") {
+  if (form.id === "correction-form") {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    const correctedAt = new Date(data.createdAt);
+    if (!Number.isFinite(correctedAt.getTime())) {
+      showToast("Tanggal dan waktu koreksi tidak valid.", true);
+      return;
+    }
+    const submitButton = $('button[type="submit"]', form);
+    submitButton.disabled = true;
+    try {
+      const result = await api(`/api/admin/records/${encodeURIComponent(data.attendanceId)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          attendanceType: data.attendanceType,
+          createdAt: correctedAt.toISOString(),
+          note: data.note,
+          reason: data.reason
+        })
+      });
+      $("#correction-panel").classList.add("hidden");
+      showToast(result.message);
+      resetAttendanceRecords("Riwayat diperbarui setelah koreksi.");
+      await Promise.all([loadAttendanceRecords(), loadMonthlyReport($("#summary-month").value)]);
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      submitButton.disabled = false;
+    }
+  } else if (form.id === "admin-login-form" || form.id === "admin-setup-form") {
     event.preventDefault();
     const isSetup = form.id === "admin-setup-form";
     const data = Object.fromEntries(new FormData(form));
@@ -823,7 +944,8 @@ document.addEventListener("submit", async event => {
         body: JSON.stringify({
           toleranceMinutes: Number(data.toleranceMinutes),
           lateLimitMinutes: Number(data.lateLimitMinutes),
-          earlyLimitMinutes: Number(data.earlyLimitMinutes)
+          earlyLimitMinutes: Number(data.earlyLimitMinutes),
+          lateDepartureLimitMinutes: Number(data.lateDepartureLimitMinutes)
         })
       });
       showToast(result.message);
