@@ -218,7 +218,7 @@ function renderRecord(record) {
     ? `<a class="photo-link" href="/api/admin/attendance/${record.id}/photo" target="_blank" rel="noopener">Lihat foto ↗</a>`
     : `<span class="muted-cell">—</span>`;
   const attendanceType = record.type === "pulang" ? "Pulang" : "Datang";
-  const correctionButton = `<button class="record-correction-button" type="button" data-correct-record="${record.id}" data-type="${record.type}" data-created-at="${escapeHtml(record.createdAt)}" data-note="${escapeHtml(record.note)}" data-name="${escapeHtml(record.name)}">Koreksi</button>`;
+  const correctionButton = `<button class="record-correction-button" type="button" data-correct-record="${record.id}" data-type="${record.type}" data-schedule-id="${escapeHtml(record.scheduleId)}" data-schedule-label="${escapeHtml(record.scheduleLabel)}" data-schedule-start="${escapeHtml(record.scheduleStartTime)}" data-schedule-end="${escapeHtml(record.scheduleEndTime)}" data-created-at="${escapeHtml(record.createdAt)}" data-note="${escapeHtml(record.note)}" data-name="${escapeHtml(record.name)}">Koreksi</button>`;
   return `<tr>
     <td><span class="record-date">${escapeHtml(formatDate(record.createdAt))}</span><span class="record-time">${escapeHtml(formatTime(record.createdAt))}</span></td>
     <td><strong class="record-name record-name--${escapeHtml(record.status.color)}">${escapeHtml(record.name)}</strong><span class="record-type record-type--${escapeHtml(record.status.color)}">${attendanceType} · ${escapeHtml(record.status.label)}</span><span class="record-schedule">${escapeHtml(record.scheduleLabel)} (${escapeHtml(record.scheduleStartTime)}–${escapeHtml(record.scheduleEndTime)})</span>${correctionButton}</td>
@@ -233,7 +233,10 @@ function formatCorrectionValues(values) {
   const dateTime = Number.isFinite(timestamp.getTime())
     ? `${formatDate(timestamp)} ${formatTime(timestamp)}`
     : "Waktu tidak valid";
-  return `${attendanceType} · ${dateTime} · Keterangan: ${values.note || "—"}`;
+  const schedule = values.scheduleLabel
+    ? ` · Shift: ${values.scheduleLabel} (${values.scheduleStartTime}–${values.scheduleEndTime})`
+    : "";
+  return `${attendanceType} · ${dateTime}${schedule} · Keterangan: ${values.note || "—"}`;
 }
 
 function renderCorrectionHistory(corrections) {
@@ -334,6 +337,8 @@ function renderDashboard(data) {
             <input name="attendanceId" type="hidden">
             <label class="field-label" for="correction-type">Jenis absensi</label>
             <select id="correction-type" name="attendanceType" required><option value="datang">Datang</option><option value="pulang">Pulang</option></select>
+            <label class="field-label" for="correction-schedule">Shift</label>
+            <select id="correction-schedule" name="scheduleId" required></select>
             <label class="field-label" for="correction-created-at">Tanggal dan waktu (zona waktu perangkat)</label>
             <input id="correction-created-at" name="createdAt" type="datetime-local" required>
             <label class="field-label" for="correction-note">Keterangan</label>
@@ -783,10 +788,14 @@ document.addEventListener("click", async event => {
     const recordId = correctionButton.dataset.correctRecord;
     form.elements.attendanceId.value = recordId;
     form.elements.attendanceType.value = correctionButton.dataset.type;
+    $("#correction-schedule").innerHTML = adminData.schedules.map(schedule =>
+      `<option value="${escapeHtml(schedule.id)}">${escapeHtml(schedule.label)} (${escapeHtml(schedule.startTime)}–${escapeHtml(schedule.endTime)})</option>`
+    ).join("");
+    $("#correction-schedule").value = correctionButton.dataset.scheduleId;
     form.elements.createdAt.value = toLocalDateTimeInput(correctionButton.dataset.createdAt);
     form.elements.note.value = correctionButton.dataset.note;
     form.elements.reason.value = "";
-    $("#correction-current").textContent = `Catatan saat ini untuk ${correctionButton.dataset.name}: ${correctionButton.dataset.type === "datang" ? "Datang" : "Pulang"} · ${formatDate(correctionButton.dataset.createdAt)} ${formatTime(correctionButton.dataset.createdAt)}. Isi perubahan dan alasan koreksi.`;
+    $("#correction-current").textContent = `Catatan saat ini untuk ${correctionButton.dataset.name}: ${correctionButton.dataset.type === "datang" ? "Datang" : "Pulang"} · ${formatDate(correctionButton.dataset.createdAt)} ${formatTime(correctionButton.dataset.createdAt)} · Shift ${correctionButton.dataset.scheduleLabel} (${correctionButton.dataset.scheduleStart}–${correctionButton.dataset.scheduleEnd}). Isi perubahan dan alasan koreksi.`;
     $("#correction-history-content").innerHTML = '<p class="form-hint">Memuat riwayat…</p>';
     panel.classList.remove("hidden");
     panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -843,6 +852,7 @@ document.addEventListener("submit", async event => {
         method: "PUT",
         body: JSON.stringify({
           attendanceType: data.attendanceType,
+          scheduleId: data.scheduleId,
           createdAt: correctedAt.toISOString(),
           note: data.note,
           reason: data.reason

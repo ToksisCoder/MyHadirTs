@@ -782,6 +782,7 @@ admin.get("/records", async (request, response) => {
       id: record.id,
       name: record.person_name,
       type: record.attendance_type,
+      scheduleId: record.schedule_id,
       note: record.note,
       values: record.values_json,
       hasPhoto: Boolean(record.photo_path),
@@ -808,7 +809,7 @@ admin.get("/records/:id/corrections", async (request, response) => {
 admin.put("/records/:id", async (request, response) => {
   const recordId = Number(request.params.id);
   if (!Number.isSafeInteger(recordId) || recordId < 1) return sendError(response, 404, "Catatan absensi tidak ditemukan.");
-  const { attendanceType, createdAt, note, reason } = request.body ?? {};
+  const { attendanceType, createdAt, note, reason, scheduleId } = request.body ?? {};
   if (attendanceType !== "datang" && attendanceType !== "pulang") {
     return sendError(response, 400, "Pilih jenis absensi Datang atau Pulang.");
   }
@@ -821,6 +822,9 @@ admin.put("/records/:id", async (request, response) => {
   if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 1000) {
     return sendError(response, 400, "Alasan koreksi wajib diisi (maksimal 1.000 karakter).");
   }
+  if (typeof scheduleId !== "string" || !scheduleId.trim() || scheduleId.length > 100) {
+    return sendError(response, 400, "Pilih shift yang valid.");
+  }
   const correctedAt = new Date(createdAt);
   const result = await getSupabase().rpc("correct_attendance", {
     p_attendance_id: recordId,
@@ -829,6 +833,7 @@ admin.put("/records/:id", async (request, response) => {
     p_created_local_date: localDate(correctedAt),
     p_note: note.trim(),
     p_reason: reason.trim(),
+    p_schedule_id: scheduleId,
     p_admin_username: request.adminUsername
   });
   if (result.error?.code === "P0002") return sendError(response, 404, "Catatan absensi tidak ditemukan.");
@@ -838,6 +843,7 @@ admin.put("/records/:id", async (request, response) => {
   if (result.error?.code === "23514") {
     return sendError(response, 409, "Koreksi bertentangan dengan shift yang sudah dikunci pada tanggal tersebut.");
   }
+  if (result.error?.code === "P0003") return sendError(response, 400, "Shift yang dipilih tidak ditemukan.");
   if (result.error?.code === "P0001") return sendError(response, 400, "Tidak ada perubahan pada catatan absensi.");
   unwrap(result);
   return response.json({ message: "Koreksi absensi berhasil disimpan dan dicatat pada log audit." });
